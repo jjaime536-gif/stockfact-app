@@ -1,14 +1,14 @@
-import React, { useState } from 'react'
-import { Card, CardTitle, Btn, Badge, Table, Modal, Input, Select, Grid, formatPeso, formatFecha } from '../components/UI'
+import React, { useState, useMemo } from 'react'
+import { Card, CardTitle, Btn, Badge, Table, Input, Select, Grid, formatPeso, formatFecha } from '../components/UI'
 import { crearComprobante, updateEstadoComprobante, getEmpresa, getComprobante } from '../supabase'
 import { imprimirComprobante } from '../components/ComprobantePDF'
+import { getAlicuotaDefault, esSinIva } from '../utils/iva'
 
 const TIPOS = [
   { v: 'FA', l: 'Factura A' }, { v: 'FB', l: 'Factura B' }, { v: 'FC', l: 'Factura C' },
   { v: 'NCA', l: 'Nota de Crédito A' }, { v: 'NCB', l: 'Nota de Crédito B' },
   { v: 'ticket', l: 'Ticket' }
 ]
-const ITEM_VACIO = { descripcion: '', cantidad: 1, precio_unitario: 0, alicuota_iva: 21, producto_id: null }
 
 const badgeEstado = e => {
   const m = { cobrada: 'success', pendiente: 'warning', vencida: 'danger', anulada: 'gray' }
@@ -16,26 +16,29 @@ const badgeEstado = e => {
 }
 
 export default function Facturacion({ empresa, clientes, productos, comprobantes, recargar }) {
+  const sinIva    = useMemo(() => esSinIva(empresa?.condicion_iva), [empresa])
+  const aDefault  = useMemo(() => getAlicuotaDefault(empresa?.condicion_iva), [empresa])
+
   const [tipo, setTipo]       = useState('FB')
   const [pv, setPv]           = useState(1)
   const [clienteId, setClienteId] = useState('')
   const [condPago, setCondPago]   = useState('Contado')
   const [fecha, setFecha]     = useState(new Date().toISOString().split('T')[0])
   const [obs, setObs]         = useState('')
-  const [items, setItems]     = useState([{ ...ITEM_VACIO }])
+  const [items, setItems]     = useState([{ descripcion: '', cantidad: 1, precio_unitario: 0, alicuota_iva: aDefault, producto_id: null }])
   const [emitiendo, setEmitiendo] = useState(false)
   const [cargandoPDF, setCargandoPDF] = useState(false)
   const [error, setError]     = useState('')
 
   const totales = items.reduce((acc, it) => {
     const neto = (parseFloat(it.cantidad)||0) * (parseFloat(it.precio_unitario)||0)
-    const iva  = neto * (parseFloat(it.alicuota_iva)||0) / 100
+    const iva  = sinIva ? 0 : neto * (parseFloat(it.alicuota_iva)||0) / 100
     return { neto: acc.neto + neto, iva: acc.iva + iva, total: acc.total + neto + iva }
   }, { neto: 0, iva: 0, total: 0 })
 
   const setItem = (i, k, v) => setItems(p => p.map((it, idx) => idx === i ? { ...it, [k]: v } : it))
   const quitarItem = i => setItems(p => p.filter((_, idx) => idx !== i))
-  const agregarItem = () => setItems(p => [...p, { ...ITEM_VACIO }])
+  const agregarItem = () => setItems(p => [...p, { descripcion: '', cantidad: 1, precio_unitario: 0, alicuota_iva: aDefault, producto_id: null }])
 
   const selProducto = (i, prodId) => {
     const p = productos.find(p => p.id === prodId)
@@ -76,7 +79,8 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
     const { data, error: e } = await crearComprobante(comp, itemsData)
     if (e) { setError(e.message); setEmitiendo(false); return }
     recargar()
-    setItems([{ ...ITEM_VACIO }]); setObs(''); setClienteId('')
+    setItems([{ descripcion: '', cantidad: 1, precio_unitario: 0, alicuota_iva: aDefault, producto_id: null }])
+    setObs(''); setClienteId('')
     setEmitiendo(false)
     // Abrir PDF automaticamente
     const { data: compCompleto } = await getComprobante(data.id)
@@ -126,13 +130,13 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
         <div>
           <Card style={{ marginBottom:16 }}>
             <CardTitle>Items del comprobante</CardTitle>
-            <div style={{ display:'grid', gridTemplateColumns:'2fr 60px 100px 80px 28px', gap:6, marginBottom:6 }}>
-              {['Descripción','Cant.','P.Unit.','IVA',''].map((h,i) =>
+            <div style={{ display:'grid', gridTemplateColumns: sinIva ? '2fr 60px 120px 28px' : '2fr 60px 100px 80px 28px', gap:6, marginBottom:6 }}>
+              {(sinIva ? ['Descripción','Cant.','P. Total',''] : ['Descripción','Cant.','P.Unit.','IVA','']).map((h,i) =>
                 <span key={i} style={{ fontSize:11, color:'var(--text2)' }}>{h}</span>)}
             </div>
             {items.map((it, i) => (
               <div key={i} style={{ marginBottom:6 }}>
-                <div style={{ display:'grid', gridTemplateColumns:'2fr 60px 100px 80px 28px', gap:6, alignItems:'center' }}>
+                <div style={{ display:'grid', gridTemplateColumns: sinIva ? '2fr 60px 120px 28px' : '2fr 60px 100px 80px 28px', gap:6, alignItems:'center' }}>
                   <select value={it.producto_id || ''} onChange={e => selProducto(i, e.target.value || null)}
                     style={{ padding:'6px 8px', border:'0.5px solid var(--border2)', borderRadius:'var(--radius)', background:'var(--bg)', color:'var(--text)', fontSize:12, fontFamily:'inherit' }}>
                     <option value="">— Libre —</option>
@@ -142,10 +146,13 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
                     style={{ padding:'6px 8px', border:'0.5px solid var(--border2)', borderRadius:'var(--radius)', background:'var(--bg)', color:'var(--text)', fontSize:12 }} />
                   <input type="number" value={it.precio_unitario} onChange={e => setItem(i,'precio_unitario',e.target.value)}
                     style={{ padding:'6px 8px', border:'0.5px solid var(--border2)', borderRadius:'var(--radius)', background:'var(--bg)', color:'var(--text)', fontSize:12 }} />
-                  <select value={it.alicuota_iva} onChange={e => setItem(i,'alicuota_iva',e.target.value)}
-                    style={{ padding:'6px 4px', border:'0.5px solid var(--border2)', borderRadius:'var(--radius)', background:'var(--bg)', color:'var(--text)', fontSize:11 }}>
-                    <option value={0}>0%</option><option value={10.5}>10,5%</option><option value={21}>21%</option><option value={27}>27%</option>
-                  </select>
+                  {!sinIva && (
+                    <select value={it.alicuota_iva} onChange={e => setItem(i,'alicuota_iva',e.target.value)}
+                      style={{ padding:'6px 4px', border:'0.5px solid var(--border2)', borderRadius:'var(--radius)', background:'var(--bg)', color:'var(--text)', fontSize:11 }}>
+                      {[{v:0,l:'0%'},{v:2.5,l:'2,5%'},{v:5,l:'5%'},{v:10.5,l:'10,5%'},{v:21,l:'21%'},{v:27,l:'27%'}].map(a =>
+                        <option key={a.v} value={a.v}>{a.l}</option>)}
+                    </select>
+                  )}
                   <Btn sm danger onClick={() => quitarItem(i)}>✕</Btn>
                 </div>
                 {!it.producto_id && (

@@ -1,14 +1,15 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Card, Btn, Badge, Table, Modal, Input, Select, formatPeso } from '../components/UI'
 import { upsertProducto, deleteProducto, ajusteStock, getEmpresa } from '../supabase'
+import { getAlicuotas, getAlicuotaDefault } from '../utils/iva'
 
 const CATEGORIAS = ['General', 'Insumos', 'Productos', 'Servicios']
 const UNIDADES   = ['unidad', 'kg', 'lt', 'm2', 'm', 'hora', 'caja', 'rollo']
-const ALICUOTAS  = [{ v: 0, l: 'Exento 0%' }, { v: 2.5, l: '2,5%' }, { v: 5, l: '5%' }, { v: 10.5, l: '10,5%' }, { v: 21, l: '21%' }, { v: 27, l: '27%' }]
 
 const EMPTY = { codigo: '', nombre: '', descripcion: '', categoria: 'General', unidad: 'unidad', precio_venta: '', costo: '', alicuota_iva: 21, stock_actual: 0, stock_minimo: 0 }
 
 export default function Stock({ productos, recargar, empresa }) {
+  const alicuotas = useMemo(() => getAlicuotas(empresa?.condicion_iva), [empresa])
   const [busqueda, setBusqueda] = useState('')
   const [catFiltro, setCatFiltro] = useState('')
   const [modal, setModal] = useState(false)
@@ -115,7 +116,7 @@ export default function Stock({ productos, recargar, empresa }) {
           <Input label="Precio venta" type="number" value={form.precio_venta} onChange={e => f('precio_venta', e.target.value)} />
           <Input label="Costo" type="number" value={form.costo} onChange={e => f('costo', e.target.value)} />
           <Select label="IVA" value={form.alicuota_iva} onChange={e => f('alicuota_iva', parseFloat(e.target.value))}>
-            {ALICUOTAS.map(a => <option key={a.v} value={a.v}>{a.l}</option>)}
+            {alicuotas.map(a => <option key={a.v} value={a.v}>{a.l}</option>)}
           </Select>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 12px' }}>
