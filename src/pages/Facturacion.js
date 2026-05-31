@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { Card, CardTitle, Btn, Badge, Table, Modal, Input, Select, Grid, formatPeso, formatFecha } from '../components/UI'
-import { crearComprobante, updateEstadoComprobante, getEmpresa } from '../supabase'
+import { crearComprobante, updateEstadoComprobante, getEmpresa, getComprobante } from '../supabase'
+import ComprobantePDF from '../components/ComprobantePDF'
 
 const TIPOS = [
   { v: 'FA', l: 'Factura A' }, { v: 'FB', l: 'Factura B' }, { v: 'FC', l: 'Factura C' },
@@ -25,7 +26,8 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
   const [items, setItems] = useState([{ ...ITEM_VACIO }])
   const [emitiendo, setEmitiendo] = useState(false)
   const [error, setError] = useState('')
-  const [modalComp, setModalComp] = useState(null)
+  const [compPDF, setCompPDF] = useState(null)
+  const [cargandoPDF, setCargandoPDF] = useState(false)
 
   const totales = items.reduce((acc, it) => {
     const neto = (parseFloat(it.cantidad)||0) * (parseFloat(it.precio_unitario)||0)
@@ -39,7 +41,7 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
 
   const selProducto = (i, prodId) => {
     const p = productos.find(p => p.id === prodId)
-    if (!p) return
+    if (!p) { setItem(i, 'producto_id', null); return }
     setItem(i, 'producto_id', prodId)
     setItem(i, 'descripcion', p.nombre)
     setItem(i, 'precio_unitario', p.precio_venta)
@@ -51,8 +53,7 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
     setEmitiendo(true); setError('')
     const { data: emp } = await getEmpresa()
     const comp = {
-      empresa_id: emp.id,
-      cliente_id: clienteId || null,
+      empresa_id: emp.id, cliente_id: clienteId || null,
       tipo, punto_venta: pv, fecha, condicion_pago: condPago, moneda: 'ARS',
       subtotal: totales.neto, iva_total: totales.iva, otros_tributos: 0, total: totales.total,
       estado: 'pendiente', observaciones: obs
@@ -72,7 +73,16 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
     recargar()
     setItems([{ ...ITEM_VACIO }]); setObs(''); setClienteId('')
     setEmitiendo(false)
-    alert(`Comprobante emitido correctamente.\nNúmero: ${String(pv).padStart(4,'0')}-${String(data.numero).padStart(8,'0')}`)
+    // Abrir PDF automaticamente
+    const { data: compCompleto } = await getComprobante(data.id)
+    setCompPDF({ ...compCompleto })
+  }
+
+  const verPDF = async (id) => {
+    setCargandoPDF(true)
+    const { data } = await getComprobante(id)
+    setCompPDF(data)
+    setCargandoPDF(false)
   }
 
   const cambiarEstado = async (id, estado) => {
@@ -81,13 +91,19 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
 
   return (
     <div>
-      {/* Banner ARCA */}
+      {compPDF && (
+        <ComprobantePDF
+          comprobante={compPDF}
+          empresa={empresa}
+          onClose={() => setCompPDF(null)}
+        />
+      )}
+
       <div style={{ background: 'var(--blue-light)', border: '0.5px solid #B5D4F4', borderRadius: 'var(--radius)', padding: '10px 14px', marginBottom: 16, fontSize: 13, color: 'var(--blue)' }}>
         ℹ Modo local — los comprobantes se guardan en tu base de datos. Para emitir con CAE real, conectá ARCA en la sección correspondiente.
       </div>
 
       <Grid cols={2} gap={16}>
-        {/* Formulario izquierda */}
         <div>
           <Card style={{ marginBottom: 16 }}>
             <CardTitle>Datos del comprobante</CardTitle>
@@ -117,7 +133,6 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
           </Card>
         </div>
 
-        {/* Items derecha */}
         <div>
           <Card style={{ marginBottom: 16 }}>
             <CardTitle>Items del comprobante</CardTitle>
@@ -126,34 +141,34 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
                 <span key={i} style={{ fontSize: 11, color: 'var(--text2)' }}>{h}</span>)}
             </div>
             {items.map((it, i) => (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 100px 80px 28px', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                <select
-                  value={it.producto_id || ''}
-                  onChange={e => e.target.value ? selProducto(i, e.target.value) : setItem(i, 'producto_id', null)}
-                  style={{ padding: '6px 8px', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit' }}>
-                  <option value="">— Descripción libre —</option>
-                  {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                </select>
+              <div key={i} style={{ marginBottom: 6 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 100px 80px 28px', gap: 6, alignItems: 'center' }}>
+                  <select value={it.producto_id || ''}
+                    onChange={e => selProducto(i, e.target.value || null)}
+                    style={{ padding: '6px 8px', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit' }}>
+                    <option value="">— Libre —</option>
+                    {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                  </select>
+                  <input type="number" value={it.cantidad} min={1}
+                    onChange={e => setItem(i, 'cantidad', e.target.value)}
+                    style={{ padding: '6px 8px', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12 }} />
+                  <input type="number" value={it.precio_unitario}
+                    onChange={e => setItem(i, 'precio_unitario', e.target.value)}
+                    style={{ padding: '6px 8px', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12 }} />
+                  <select value={it.alicuota_iva} onChange={e => setItem(i, 'alicuota_iva', e.target.value)}
+                    style={{ padding: '6px 4px', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11 }}>
+                    <option value={0}>0%</option><option value={10.5}>10,5%</option><option value={21}>21%</option><option value={27}>27%</option>
+                  </select>
+                  <Btn sm danger onClick={() => quitarItem(i)}>✕</Btn>
+                </div>
                 {!it.producto_id && (
-                  <input placeholder="Descripción" value={it.descripcion}
+                  <input placeholder="Descripción del item..." value={it.descripcion}
                     onChange={e => setItem(i, 'descripcion', e.target.value)}
-                    style={{ gridColumn: '1', padding: '6px 8px', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit' }} />
+                    style={{ width: '100%', marginTop: 4, padding: '6px 8px', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit' }} />
                 )}
-                <input type="number" value={it.cantidad} min={1}
-                  onChange={e => setItem(i, 'cantidad', e.target.value)}
-                  style={{ padding: '6px 8px', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12 }} />
-                <input type="number" value={it.precio_unitario}
-                  onChange={e => setItem(i, 'precio_unitario', e.target.value)}
-                  style={{ padding: '6px 8px', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12 }} />
-                <select value={it.alicuota_iva} onChange={e => setItem(i, 'alicuota_iva', e.target.value)}
-                  style={{ padding: '6px 4px', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11 }}>
-                  <option value={0}>0%</option><option value={10.5}>10,5%</option><option value={21}>21%</option><option value={27}>27%</option>
-                </select>
-                <Btn sm danger onClick={() => quitarItem(i)}>✕</Btn>
               </div>
             ))}
             <Btn sm onClick={agregarItem} style={{ marginTop: 8 }}>+ Agregar item</Btn>
-
             <div style={{ borderTop: '0.5px solid var(--border)', marginTop: 14, paddingTop: 14 }}>
               {[['Subtotal neto', totales.neto], ['IVA', totales.iva]].map(([l,v]) => (
                 <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
@@ -165,23 +180,19 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
               </div>
             </div>
           </Card>
-
           {error && <div style={{ color: 'var(--red)', fontSize: 12, marginBottom: 10 }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Btn primary onClick={emitir} disabled={emitiendo} style={{ flex: 1 }}>
-              {emitiendo ? 'Emitiendo…' : '▶ Emitir comprobante'}
-            </Btn>
-          </div>
+          <Btn primary onClick={emitir} disabled={emitiendo} style={{ width: '100%' }}>
+            {emitiendo ? 'Emitiendo…' : '▶ Emitir comprobante'}
+          </Btn>
         </div>
       </Grid>
 
-      {/* Historial */}
       <Card style={{ marginTop: 20 }}>
         <CardTitle>Comprobantes emitidos</CardTitle>
         <Table
           headers={['N°', 'Tipo', 'Fecha', 'Cliente', 'Total', 'CAE', 'Estado', '']}
           emptyMsg="Aún no hay comprobantes"
-          rows={comprobantes.slice(0,30).map(c => ({
+          rows={comprobantes.slice(0,50).map(c => ({
             cells: [
               `${String(c.punto_venta||1).padStart(4,'0')}-${String(c.numero||0).padStart(8,'0')}`,
               TIPOS.find(t=>t.v===c.tipo)?.l || c.tipo,
@@ -191,7 +202,12 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
               c.cae ? <Badge type="success">CAE ✓</Badge> : <Badge type="gray">Local</Badge>,
               badgeEstado(c.estado),
               <div style={{ display:'flex', gap: 4 }}>
-                {c.estado === 'pendiente' && <Btn sm onClick={() => cambiarEstado(c.id,'cobrada')}>✓ Cobrar</Btn>}
+                <Btn sm onClick={() => verPDF(c.id)} disabled={cargandoPDF}>
+                  {cargandoPDF ? '…' : '🖨 PDF'}
+                </Btn>
+                {c.estado === 'pendiente' && (
+                  <Btn sm onClick={() => cambiarEstado(c.id,'cobrada')}>✓ Cobrar</Btn>
+                )}
               </div>
             ]
           }))}
