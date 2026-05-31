@@ -184,6 +184,13 @@ export function imprimirComprobante(comprobante, empresa) {
     </div>
   </div>
 
+  <!-- COMPROBANTE ORIGINAL (solo en notas) -->
+  ${(comprobante.tipo.startsWith('NC') || comprobante.tipo.startsWith('ND')) ? `
+  <div style="padding:8px 18px; border-bottom:1px solid #ccc; background:#fff8e6; font-size:10px;">
+    <strong style="color:#854F0B">Comprobante que se corrige:</strong>
+    ${comprobante.observaciones ? comprobante.observaciones.split('|')[0].replace('Asociado a comprobante:','').trim() : '—'}
+  </div>` : ''}
+
   <!-- TABLA DE ITEMS -->
   <table>
     <thead>${sinIva ? theadSinIva : theadConIva}</thead>

@@ -46,6 +46,7 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
   const [condPago, setCondPago]   = useState('Contado')
   const [fecha, setFecha]     = useState(new Date().toISOString().split('T')[0])
   const [obs, setObs]         = useState('')
+  const [compOriginalId, setCompOriginalId] = useState('')
   const [items, setItems]     = useState([{ descripcion: '', cantidad: 1, precio_unitario: 0, alicuota_iva: aDefault, producto_id: null }])
   const [emitiendo, setEmitiendo] = useState(false)
   const [cargandoPDF, setCargandoPDF] = useState(false)
@@ -56,6 +57,8 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
     const iva  = sinIva ? 0 : neto * (parseFloat(it.alicuota_iva)||0) / 100
     return { neto: acc.neto + neto, iva: acc.iva + iva, total: acc.total + neto + iva }
   }, { neto: 0, iva: 0, total: 0 })
+
+  const esNota = tipo.startsWith('NC') || tipo.startsWith('ND')
 
   const setItem = (i, k, v) => setItems(p => p.map((it, idx) => idx === i ? { ...it, [k]: v } : it))
   const quitarItem = i => setItems(p => p.filter((_, idx) => idx !== i))
@@ -85,7 +88,10 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
       empresa_id: emp.id, cliente_id: clienteId || null,
       tipo, punto_venta: pv, fecha, condicion_pago: condPago, moneda: 'ARS',
       subtotal: totales.neto, iva_total: totales.iva, otros_tributos: 0, total: totales.total,
-      estado: 'pendiente', observaciones: obs
+      estado: 'pendiente',
+      observaciones: compOriginalId
+        ? `Asociado a comprobante: ${comprobantes.find(c=>c.id===compOriginalId) ? String(comprobantes.find(c=>c.id===compOriginalId).punto_venta||1).padStart(4,'0')+'-'+String(comprobantes.find(c=>c.id===compOriginalId).numero||0).padStart(8,'0') : ''} | ${obs}`
+        : obs
     }
     const itemsData = items.map(it => ({
       producto_id: it.producto_id || null,
@@ -101,7 +107,7 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
     if (e) { setError(e.message); setEmitiendo(false); return }
     recargar()
     setItems([{ descripcion: '', cantidad: 1, precio_unitario: 0, alicuota_iva: aDefault, producto_id: null }])
-    setObs(''); setClienteId('')
+    setObs(''); setClienteId(''); setCompOriginalId('')
     setEmitiendo(false)
     // Abrir PDF automaticamente
     const { data: compCompleto } = await getComprobante(data.id)
@@ -140,6 +146,22 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
               </Select>
               <Input label="Fecha" type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
             </div>
+            {esNota && (
+              <div style={{ marginBottom:14 }}>
+                <label style={{ display:'block', fontSize:12, fontWeight:500, color:'var(--red)', marginBottom:5 }}>
+                  ⚠ Comprobante original que se corrige *
+                </label>
+                <select value={compOriginalId} onChange={e => setCompOriginalId(e.target.value)}
+                  style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--red)', borderRadius:'var(--radius)', background:'var(--bg)', color:'var(--text)', fontSize:13, fontFamily:'inherit' }}>
+                  <option value="">— Seleccionar comprobante —</option>
+                  {comprobantes.filter(c => !c.tipo.startsWith('NC') && !c.tipo.startsWith('ND')).map(c => (
+                    <option key={c.id} value={c.id}>
+                      {String(c.punto_venta||1).padStart(4,'0')}-{String(c.numero||0).padStart(8,'0')} | {[...TIPOS_RI,...TIPOS_MONO,...TIPOS_EXENTO].find(t=>t.v===c.tipo)?.l||c.tipo} | {c.clientes?.nombre||'CF'} | ${(c.total||0).toLocaleString('es-AR')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div style={{ marginBottom:14 }}>
               <label style={{ display:'block', fontSize:12, fontWeight:500, color:'var(--text2)', marginBottom:5 }}>Observaciones</label>
               <textarea value={obs} onChange={e => setObs(e.target.value)} placeholder="Notas para el comprobante..."
