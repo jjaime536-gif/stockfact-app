@@ -8,50 +8,70 @@ import Reportes from './pages/Reportes'
 import Configuracion from './pages/Configuracion'
 import ARCA from './pages/ARCA'
 import AdminUsuarios from './pages/AdminUsuarios'
+import AdminClientes from './pages/AdminClientes'
 
-const NAV = [
-  { id: 'dashboard', label: 'Dashboard',      icon: '▦' },
-  { id: 'stock',     label: 'Stock',           icon: '▣' },
-  { id: 'factura',   label: 'Facturación',     icon: '▤' },
-  { id: 'reportes',  label: 'Reportes',        icon: '▧' },
-  { id: 'usuarios',  label: 'Usuarios',        icon: '◉' },
-  { id: 'config',    label: 'Configuración',   icon: '⚙' },
-  { id: 'arca',      label: 'ARCA / AFIP',     icon: '⊕' },
+const NAV_CLIENTE = [
+  { id: 'dashboard', label: 'Dashboard',    icon: '▦' },
+  { id: 'stock',     label: 'Stock',         icon: '▣' },
+  { id: 'factura',   label: 'Facturación',   icon: '▤' },
+  { id: 'reportes',  label: 'Reportes',      icon: '▧' },
+  { id: 'config',    label: 'Configuración', icon: '⚙' },
+  { id: 'arca',      label: 'ARCA / AFIP',   icon: '⊕' },
+]
+
+const NAV_ADMIN = [
+  { id: 'dashboard', label: 'Dashboard',    icon: '▦' },
+  { id: 'clientes',  label: 'Mis clientes', icon: '◈' },
+  { id: 'stock',     label: 'Stock',         icon: '▣' },
+  { id: 'factura',   label: 'Facturación',   icon: '▤' },
+  { id: 'reportes',  label: 'Reportes',      icon: '▧' },
+  { id: 'usuarios',  label: 'Usuarios',      icon: '◉' },
+  { id: 'config',    label: 'Configuración', icon: '⚙' },
+  { id: 'arca',      label: 'ARCA / AFIP',   icon: '⊕' },
 ]
 
 export default function App() {
-  const [session, setSession] = useState(undefined) // undefined = cargando
-  const [page, setPage] = useState('dashboard')
-  const [empresa, setEmpresa] = useState(null)
-  const [productos, setProductos] = useState([])
-  const [clientes, setClientes] = useState([])
+  const [session, setSession]         = useState(undefined)
+  const [esAdmin, setEsAdmin]         = useState(false)
+  const [empresaActiva, setEmpresaActiva] = useState(null) // para admin: empresa seleccionada
+  const [page, setPage]               = useState('dashboard')
+  const [empresa, setEmpresa]         = useState(null)
+  const [productos, setProductos]     = useState([])
+  const [clientes, setClientes]       = useState([])
   const [comprobantes, setComprobantes] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [loading, setLoading]         = useState(false)
+  const [error, setError]             = useState(null)
 
-  // Escuchar cambios de sesión
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => setSession(session))
     return () => subscription.unsubscribe()
   }, [])
 
-  const cargarDatos = useCallback(async () => {
+  // Verificar si es admin
+  useEffect(() => {
+    if (!session) return
+    supabase.from('usuarios_empresa').select('es_admin').eq('user_id', session.user.id).single()
+      .then(({ data }) => setEsAdmin(data?.es_admin || false))
+  }, [session])
+
+  const cargarDatos = useCallback(async (empresaIdOverride) => {
     if (!session) return
     setLoading(true)
     try {
       const [emp, prods, clis, comps] = await Promise.all([
-        getEmpresa(), getProductos(), getClientes(), getComprobantes()
+        getEmpresa(empresaIdOverride),
+        getProductos(empresaIdOverride),
+        getClientes(empresaIdOverride),
+        getComprobantes(empresaIdOverride)
       ])
-      if (emp.error && emp.error.code !== 'PGRST116') setError('No se pudo conectar con Supabase')
       setEmpresa(emp.data)
       setProductos(prods.data)
       setClientes(clis.data)
       setComprobantes(comps.data)
+      if (emp.error && emp.error.code !== 'PGRST116') setError('No se pudo conectar con Supabase')
     } catch (e) {
-      setError('Error de conexión: ' + e.message)
+      setError('Error: ' + e.message)
     }
     setLoading(false)
   }, [session])
@@ -60,96 +80,91 @@ export default function App() {
 
   const logout = async () => {
     await supabase.auth.signOut()
-    setSession(null)
-    setEmpresa(null)
+    setSession(null); setEmpresa(null); setEsAdmin(false)
     setProductos([]); setClientes([]); setComprobantes([])
   }
 
-  // Pantalla de carga inicial
-  if (session === undefined) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg2)' }}>
-        <div style={{ fontSize: 14, color: 'var(--text3)' }}>Cargando...</div>
-      </div>
-    )
-  }
+  if (session === undefined) return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--bg2)' }}>
+      <div style={{ fontSize:14, color:'var(--text3)' }}>Cargando...</div>
+    </div>
+  )
 
-  // Sin sesión → pantalla de login
-  if (!session) {
-    return <Login onLogin={() => {}} />
-  }
+  if (!session) return <Login onLogin={() => {}} />
 
-  const pageProps = { empresa, productos, clientes, comprobantes, recargar: cargarDatos }
+  const nav = esAdmin ? NAV_ADMIN : NAV_CLIENTE
+  const pageProps = { empresa, productos, clientes, comprobantes, recargar: cargarDatos, esAdmin }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ display:'flex', height:'100vh', overflow:'hidden' }}>
       {/* Sidebar */}
-      <aside style={{
-        width: 200, background: 'var(--bg)', borderRight: '0.5px solid var(--border)',
-        display: 'flex', flexDirection: 'column', flexShrink: 0
-      }}>
-        <div style={{ padding: '16px', borderBottom: '0.5px solid var(--border)' }}>
-          <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>StockFact AR</div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+      <aside style={{ width:200, background:'var(--bg)', borderRight:'0.5px solid var(--border)', display:'flex', flexDirection:'column', flexShrink:0 }}>
+        <div style={{ padding:'16px', borderBottom:'0.5px solid var(--border)' }}>
+          <div style={{ fontWeight:600, fontSize:15, color:'var(--text)' }}>StockFact AR</div>
+          <div style={{ fontSize:11, color:'var(--text3)', marginTop:2 }}>
             {empresa?.razon_social || 'Sin configurar'}
           </div>
+          {esAdmin && (
+            <div style={{ marginTop:4, fontSize:10, background:'var(--blue-light)', color:'var(--blue)', borderRadius:4, padding:'2px 6px', display:'inline-block', fontWeight:600 }}>
+              ADMIN
+            </div>
+          )}
         </div>
-        <nav style={{ flex: 1, paddingTop: 8 }}>
-          {NAV.map(n => (
+
+        <nav style={{ flex:1, paddingTop:8, overflowY:'auto' }}>
+          {nav.map(n => (
             <button key={n.id} onClick={() => setPage(n.id)} style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-              padding: '9px 16px', background: page === n.id ? 'var(--blue-light)' : 'transparent',
-              color: page === n.id ? 'var(--blue)' : 'var(--text2)',
-              border: 'none', borderLeft: `2px solid ${page === n.id ? 'var(--blue)' : 'transparent'}`,
-              cursor: 'pointer', fontSize: 13, textAlign: 'left', fontFamily: 'inherit',
-              transition: 'all 0.15s'
+              width:'100%', display:'flex', alignItems:'center', gap:10,
+              padding:'9px 16px', background: page===n.id ? 'var(--blue-light)' : 'transparent',
+              color: page===n.id ? 'var(--blue)' : 'var(--text2)',
+              border:'none', borderLeft:`2px solid ${page===n.id ? 'var(--blue)' : 'transparent'}`,
+              cursor:'pointer', fontSize:13, textAlign:'left', fontFamily:'inherit', transition:'all 0.15s'
             }}>
               <span>{n.icon}</span> {n.label}
             </button>
           ))}
         </nav>
-        <div style={{ padding: '12px 16px', borderTop: '0.5px solid var(--border)' }}>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>
-            <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: error ? '#E24B4A' : '#639922', marginRight: 6 }}/>
+
+        <div style={{ padding:'12px 16px', borderTop:'0.5px solid var(--border)' }}>
+          <div style={{ fontSize:11, color:'var(--text3)', marginBottom:6 }}>
+            <span style={{ display:'inline-block', width:7, height:7, borderRadius:'50%', background: error?'#E24B4A':'#639922', marginRight:6 }}/>
             {error ? 'Sin conexión' : 'Supabase conectado'}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>
+          <div style={{ fontSize:11, color:'var(--text3)', marginBottom:8, wordBreak:'break-all' }}>
             {session.user.email}
           </div>
           <button onClick={logout} style={{
-            width: '100%', padding: '6px 10px', background: 'transparent',
-            border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)',
-            color: 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit'
+            width:'100%', padding:'6px 10px', background:'transparent',
+            border:'0.5px solid var(--border2)', borderRadius:'var(--radius)',
+            color:'var(--text2)', fontSize:12, cursor:'pointer', fontFamily:'inherit'
           }}>Cerrar sesión</button>
         </div>
       </aside>
 
       {/* Main */}
-      <main style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <main style={{ flex:1, overflow:'auto', display:'flex', flexDirection:'column' }}>
         <div style={{
-          background: 'var(--bg)', borderBottom: '0.5px solid var(--border)',
-          padding: '12px 24px', display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between', flexShrink: 0
+          background:'var(--bg)', borderBottom:'0.5px solid var(--border)',
+          padding:'12px 24px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0
         }}>
-          <h1 style={{ fontSize: 16, fontWeight: 500 }}>
-            {NAV.find(n => n.id === page)?.label}
-          </h1>
-          {loading && <span style={{ fontSize: 12, color: 'var(--text3)' }}>Actualizando…</span>}
+          <h1 style={{ fontSize:16, fontWeight:500 }}>{nav.find(n=>n.id===page)?.label}</h1>
+          {loading && <span style={{ fontSize:12, color:'var(--text3)' }}>Actualizando…</span>}
         </div>
 
-        <div style={{ flex: 1, padding: '20px 24px', overflow: 'auto' }}>
+        <div style={{ flex:1, padding:'20px 24px', overflow:'auto' }}>
           {error && (
-            <div style={{ background: 'var(--red-light)', border: '0.5px solid #F09595', borderRadius: 'var(--radius)', padding: '12px 16px', color: 'var(--red)', fontSize: 13, marginBottom: 16 }}>
+            <div style={{ background:'var(--red-light)', border:'0.5px solid #F09595', borderRadius:'var(--radius)', padding:'12px 16px', color:'var(--red)', fontSize:13, marginBottom:16 }}>
               ⚠ {error}
             </div>
           )}
-          {page === 'dashboard'  && <Dashboard {...pageProps} />}
-          {page === 'stock'      && <Stock {...pageProps} />}
-          {page === 'factura'    && <Facturacion {...pageProps} />}
-          {page === 'reportes'   && <Reportes {...pageProps} />}
-          {page === 'usuarios'   && <AdminUsuarios {...pageProps} />}
-          {page === 'config'     && <Configuracion {...pageProps} />}
-          {page === 'arca'       && <ARCA {...pageProps} />}
+          {page==='dashboard'  && <Dashboard {...pageProps} />}
+          {page==='clientes'   && <AdminClientes {...pageProps} />}
+          {page==='stock'      && <Stock {...pageProps} />}
+          {page==='factura'    && <Facturacion {...pageProps} />}
+          {page==='reportes'   && <Reportes {...pageProps} />}
+          {page==='usuarios'   && <AdminUsuarios {...pageProps} />}
+          {page==='config'     && <Configuracion {...pageProps} />}
+          {page==='arca'       && <ARCA {...pageProps} />}
         </div>
       </main>
     </div>

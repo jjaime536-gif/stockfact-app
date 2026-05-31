@@ -6,8 +6,11 @@ const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_KEY
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 // ── Empresas ──────────────────────────────────────────────
-export const getEmpresa = async () => {
-  const { data, error } = await supabase.from('empresas').select('*').limit(1).single()
+export const getEmpresa = async (empresaId) => {
+  let q = supabase.from('empresas').select('*')
+  if (empresaId) q = q.eq('id', empresaId)
+  else q = q.limit(1)
+  const { data, error } = await q.single()
   return { data, error }
 }
 
@@ -17,8 +20,10 @@ export const updateEmpresa = async (id, updates) => {
 }
 
 // ── Clientes ──────────────────────────────────────────────
-export const getClientes = async () => {
-  const { data, error } = await supabase.from('clientes').select('*').eq('activo', true).order('nombre')
+export const getClientes = async (empresaId) => {
+  let q = supabase.from('clientes').select('*').eq('activo', true).order('nombre')
+  if (empresaId) q = q.eq('empresa_id', empresaId)
+  const { data, error } = await q
   return { data: data || [], error }
 }
 
@@ -28,8 +33,10 @@ export const upsertCliente = async (cliente) => {
 }
 
 // ── Productos ─────────────────────────────────────────────
-export const getProductos = async () => {
-  const { data, error } = await supabase.from('productos').select('*').eq('activo', true).order('nombre')
+export const getProductos = async (empresaId) => {
+  let q = supabase.from('productos').select('*').eq('activo', true).order('nombre')
+  if (empresaId) q = q.eq('empresa_id', empresaId)
+  const { data, error } = await q
   return { data: data || [], error }
 }
 
@@ -44,12 +51,10 @@ export const deleteProducto = async (id) => {
 }
 
 // ── Comprobantes ──────────────────────────────────────────
-export const getComprobantes = async () => {
-  const { data, error } = await supabase
-    .from('comprobantes')
-    .select('*, clientes(nombre, cuit_dni)')
-    .order('created_at', { ascending: false })
-    .limit(200)
+export const getComprobantes = async (empresaId) => {
+  let q = supabase.from('comprobantes').select('*, clientes(nombre, cuit_dni)').order('created_at', { ascending: false }).limit(200)
+  if (empresaId) q = q.eq('empresa_id', empresaId)
+  const { data, error } = await q
   return { data: data || [], error }
 }
 
