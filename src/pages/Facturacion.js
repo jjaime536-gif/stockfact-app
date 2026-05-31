@@ -4,11 +4,30 @@ import { crearComprobante, updateEstadoComprobante, getEmpresa, getComprobante }
 import { imprimirComprobante } from '../components/ComprobantePDF'
 import { getAlicuotaDefault, esSinIva } from '../utils/iva'
 
-const TIPOS = [
+const TIPOS_RI = [
   { v: 'FA', l: 'Factura A' }, { v: 'FB', l: 'Factura B' }, { v: 'FC', l: 'Factura C' },
-  { v: 'NCA', l: 'Nota de Crédito A' }, { v: 'NCB', l: 'Nota de Crédito B' },
+  { v: 'NCA', l: 'Nota de Crédito A' }, { v: 'NCB', l: 'Nota de Crédito B' }, { v: 'NCC', l: 'Nota de Crédito C' },
   { v: 'ticket', l: 'Ticket' }
 ]
+
+const TIPOS_MONO = [
+  { v: 'FC',  l: 'Factura C'        },
+  { v: 'NCC', l: 'Nota de Crédito C' },
+  { v: 'NDC', l: 'Nota de Débito C'  },
+]
+
+const TIPOS_EXENTO = [
+  { v: 'FB',  l: 'Factura B'         },
+  { v: 'NCB', l: 'Nota de Crédito B' },
+  { v: 'NDB', l: 'Nota de Débito B'  },
+]
+
+function getTipos(condicionIva) {
+  const c = (condicionIva || '').toLowerCase()
+  if (c.includes('monotribut')) return TIPOS_MONO
+  if (c.includes('exento'))     return TIPOS_EXENTO
+  return TIPOS_RI
+}
 
 const badgeEstado = e => {
   const m = { cobrada: 'success', pendiente: 'warning', vencida: 'danger', anulada: 'gray' }
@@ -18,8 +37,10 @@ const badgeEstado = e => {
 export default function Facturacion({ empresa, clientes, productos, comprobantes, recargar }) {
   const sinIva    = useMemo(() => esSinIva(empresa?.condicion_iva), [empresa])
   const aDefault  = useMemo(() => getAlicuotaDefault(empresa?.condicion_iva), [empresa])
+  const tipos     = useMemo(() => getTipos(empresa?.condicion_iva), [empresa])
+  const tipoDefault = useMemo(() => getTipos(empresa?.condicion_iva)[0]?.v || 'FC', [empresa])
 
-  const [tipo, setTipo]       = useState('FB')
+  const [tipo, setTipo]       = useState('FC')
   const [pv, setPv]           = useState(1)
   const [clienteId, setClienteId] = useState('')
   const [condPago, setCondPago]   = useState('Contado')
@@ -103,7 +124,7 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
             <CardTitle>Datos del comprobante</CardTitle>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 12px' }}>
               <Select label="Tipo" value={tipo} onChange={e => setTipo(e.target.value)}>
-                {TIPOS.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
+                {tipos.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
               </Select>
               <Select label="Punto de venta" value={pv} onChange={e => setPv(parseInt(e.target.value))}>
                 <option value={1}>0001</option><option value={2}>0002</option>
@@ -188,7 +209,7 @@ export default function Facturacion({ empresa, clientes, productos, comprobantes
           rows={comprobantes.slice(0,50).map(c => ({
             cells: [
               `${String(c.punto_venta||1).padStart(4,'0')}-${String(c.numero||0).padStart(8,'0')}`,
-              TIPOS.find(t=>t.v===c.tipo)?.l || c.tipo,
+              [...TIPOS_RI, ...TIPOS_MONO, ...TIPOS_EXENTO].find(t=>t.v===c.tipo)?.l || c.tipo,
               formatFecha(c.fecha),
               c.clientes?.nombre || 'Consumidor Final',
               formatPeso(c.total),

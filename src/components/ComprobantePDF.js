@@ -6,13 +6,14 @@ const fmtFecha = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR'
 const TIPOS_LABEL = {
   FA: 'FACTURA A', FB: 'FACTURA B', FC: 'FACTURA C',
   NCA: 'NOTA DE CRÉDITO A', NCB: 'NOTA DE CRÉDITO B', NCC: 'NOTA DE CRÉDITO C',
+  NDA: 'NOTA DE DÉBITO A',  NDB: 'NOTA DE DÉBITO B',  NDC: 'NOTA DE DÉBITO C',
   ticket: 'TICKET'
 }
-const LETRA = { FA: 'A', FB: 'B', FC: 'C', NCA: 'A', NCB: 'B', NCC: 'C', ticket: 'T' }
-const COD   = { FA: '01', FB: '06', FC: '11', NCA: '03', NCB: '08', NCC: '13', ticket: '83' }
+const LETRA = { FA: 'A', FB: 'B', FC: 'C', NCA: 'A', NCB: 'B', NCC: 'C', NDA: 'A', NDB: 'B', NDC: 'C', ticket: 'T' }
+const COD   = { FA: '01', FB: '06', FC: '11', NCA: '03', NCB: '08', NCC: '13', NDA: '02', NDB: '07', NDC: '12', ticket: '83' }
 
-// Tipos sin IVA: Factura C, NC C, ticket de monotributista
-const SIN_IVA_TIPOS = ['FC', 'NCC', 'ticket']
+// Tipos sin IVA: Factura C, NC C, ND C, ticket
+const SIN_IVA_TIPOS = ['FC', 'NCC', 'NDC', 'ticket']
 
 export function imprimirComprobante(comprobante, empresa) {
   const numero = `${String(comprobante.punto_venta || 1).padStart(4, '0')}-${String(comprobante.numero || 0).padStart(8, '0')}`
