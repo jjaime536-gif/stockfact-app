@@ -70,9 +70,10 @@ export function imprimirComprobante(comprobante, empresa) {
     .cae { background: #f5f5f5; border-top: 1px solid #ccc; padding: 12px 20px; font-size: 10px; color: #555; }
     .pie { border-top: 1px solid #ccc; padding: 8px 20px; text-align: center; font-size: 9px; color: #888; }
     @media print {
+      @page { margin: 10mm; size: A4; }
       .btn-bar { display: none !important; }
-      .wrapper { margin: 0; border: none; }
-      body { background: #fff; }
+      .wrapper { margin: 0; border: none; width: 100%; }
+      body { background: #fff; margin: 0; }
     }
   </style>
 </head>
