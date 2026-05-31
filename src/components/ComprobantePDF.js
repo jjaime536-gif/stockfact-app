@@ -12,6 +12,7 @@ const TIPOS_LABEL = {
 const LETRA = { FA:'A', FB:'B', FC:'C', NCA:'A', NCB:'B', NCC:'C', NDA:'A', NDB:'B', NDC:'C', ticket:'T' }
 const COD   = { FA:'01', FB:'06', FC:'11', NCA:'03', NCB:'08', NCC:'13', NDA:'02', NDB:'07', NDC:'12', ticket:'83' }
 const SIN_IVA = ['FC','NCC','NDC','ticket']
+const COPIAS  = ['ORIGINAL','DUPLICADO','TRIPLICADO']
 
 export function imprimirComprobante(comprobante, empresa) {
   const numero  = `${String(comprobante.punto_venta||1).padStart(4,'0')}-${String(comprobante.numero||0).padStart(8,'0')}`
@@ -20,12 +21,6 @@ export function imprimirComprobante(comprobante, empresa) {
   const items   = comprobante.items_comprobante || []
   const sinIva  = SIN_IVA.includes(comprobante.tipo)
   const esNota  = comprobante.tipo.startsWith('NC') || comprobante.tipo.startsWith('ND')
-
-  // Fecha separada en día/mes/año
-  const fechaObj = comprobante.fecha ? new Date(comprobante.fecha + 'T00:00:00') : new Date()
-  const dia  = String(fechaObj.getDate()).padStart(2,'0')
-  const mes  = String(fechaObj.getMonth()+1).padStart(2,'0')
-  const anio = fechaObj.getFullYear()
 
   // Extraer referencia comprobante original
   let compOriginalRef = ''
@@ -36,248 +31,202 @@ export function imprimirComprobante(comprobante, empresa) {
     obsLimpia = partes.slice(1).join('|').trim()
   }
 
-  // Condición IVA cliente — checkboxes
-  const condIvaCliente = (comprobante.clientes?.condicion_iva || '').toLowerCase()
-  const chk = (cond) => condIvaCliente.includes(cond) ? '&#9745;' : '&#9744;'
-  const esCF = !comprobante.clientes || !comprobante.clientes.nombre
-
-  // Condición IVA emisor para el talonario
   const condIvaEmisor = (empresa?.condicion_iva || '').toLowerCase()
-  const condEmisorLabel = condIvaEmisor.includes('monotribut')
-    ? 'RESPONSABLE MONOTRIBUTO'
-    : condIvaEmisor.includes('exento') ? 'EXENTO'
-    : 'RESPONSABLE INSCRIPTO'
+  const condEmisorLabel = condIvaEmisor.includes('monotribut') ? 'Responsable Monotributo'
+    : condIvaEmisor.includes('exento') ? 'Exento'
+    : 'Responsable Inscripto'
 
-  // Items: mínimo 8 filas para que se vea como talonario
-  const MIN_ROWS = 8
+  const condIvaCliente = (comprobante.clientes?.condicion_iva || 'Consumidor Final')
+  const esCF = !comprobante.clientes?.nombre
+
+  // Items: mínimo 10 filas vacías
+  const MIN_ROWS = 10
   const itemRows = [...items]
   while (itemRows.length < MIN_ROWS) itemRows.push(null)
 
+  const theadHTML = sinIva
+    ? `<tr><th>Código</th><th>Producto / Servicio</th><th>Cantidad</th><th>U. Medida</th><th>Precio Unit.</th><th>% Bonif</th><th>Imp. Bonif.</th><th>Subtotal</th></tr>`
+    : `<tr><th>Código</th><th>Producto / Servicio</th><th>Cantidad</th><th>U. Medida</th><th>Precio Unit.</th><th>Alíc. IVA</th><th>Imp. IVA</th><th>Subtotal</th></tr>`
+
   const itemsHTML = itemRows.map((it, i) => {
-    if (!it) return `<tr>
-      <td style="border-bottom:.5px dotted #bbb;height:22px">&nbsp;</td>
-      <td style="border-bottom:.5px dotted #bbb">&nbsp;</td>
-      <td style="border-bottom:.5px dotted #bbb">&nbsp;</td>
-      ${sinIva ? '' : '<td style="border-bottom:.5px dotted #bbb">&nbsp;</td>'}
-      <td style="border-bottom:.5px dotted #bbb;text-align:right">&nbsp;</td>
-    </tr>`
+    if (!it) return `<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`
     const cant = parseFloat(it.cantidad) || 0
     const pu   = parseFloat(it.precio_unitario) || 0
     const sub  = cant * pu
+    const impIva = sinIva ? 0 : sub * (parseFloat(it.alicuota_iva)||0) / 100
     return `<tr>
-      <td style="border-bottom:.5px dotted #bbb;height:22px;text-align:center">${fmt(cant)}</td>
-      <td style="border-bottom:.5px dotted #bbb;padding-left:6px">${it.descripcion}</td>
-      ${sinIva ? '' : `<td style="border-bottom:.5px dotted #bbb;text-align:center">${it.alicuota_iva}%</td>`}
-      <td style="border-bottom:.5px dotted #bbb;text-align:right">${fmt(pu)}</td>
-      <td style="border-bottom:.5px dotted #bbb;text-align:right">${fmt(sub)}</td>
+      <td style="text-align:center">${i+1}</td>
+      <td>${it.descripcion}</td>
+      <td style="text-align:center">${fmt(cant)}</td>
+      <td style="text-align:center">${it.productos?.unidad||'unidades'}</td>
+      <td style="text-align:right">${fmt(pu)}</td>
+      <td style="text-align:center">${sinIva ? '0,00' : it.alicuota_iva+'%'}</td>
+      <td style="text-align:right">${sinIva ? '0,00' : fmt(impIva)}</td>
+      <td style="text-align:right">${fmt(sub)}</td>
     </tr>`
   }).join('')
 
-  // Totales
   const totalesHTML = sinIva
-    ? `<tr><td>Subtotal</td><td class="r">$ ${fmt(comprobante.total)}</td></tr>
-       <tr><td>Otros Tributos</td><td class="r">$ ${fmt(comprobante.otros_tributos||0)}</td></tr>`
-    : `<tr><td>Subtotal Neto</td><td class="r">$ ${fmt(comprobante.subtotal)}</td></tr>
-       <tr><td>IVA</td><td class="r">$ ${fmt(comprobante.iva_total)}</td></tr>
-       ${comprobante.otros_tributos>0?`<tr><td>Otros Tributos</td><td class="r">$ ${fmt(comprobante.otros_tributos)}</td></tr>`:''}`
+    ? `<div class="tot-row"><span>Subtotal: $</span><span>${fmt(comprobante.total)}</span></div>
+       <div class="tot-row"><span>Importe Otros Tributos: $</span><span>${fmt(comprobante.otros_tributos||0)}</span></div>
+       <div class="tot-row tot-final"><span>Importe Total: $</span><span>${fmt(comprobante.total)}</span></div>`
+    : `<div class="tot-row"><span>Subtotal: $</span><span>${fmt(comprobante.subtotal)}</span></div>
+       <div class="tot-row"><span>IVA: $</span><span>${fmt(comprobante.iva_total)}</span></div>
+       ${comprobante.otros_tributos>0?`<div class="tot-row"><span>Importe Otros Tributos: $</span><span>${fmt(comprobante.otros_tributos)}</span></div>`:''}
+       <div class="tot-row tot-final"><span>Importe Total: $</span><span>${fmt(comprobante.total)}</span></div>`
 
-  const caeHTML = comprobante.cae
-    ? `CAE N°: <strong>${comprobante.cae}</strong> &nbsp;&nbsp; Vto. CAE: <strong>${fmtFecha(comprobante.cae_vencimiento)}</strong>`
-    : `CAE pendiente &mdash; conectar ARCA/AFIP para emisión electrónica oficial`
+  const caeBlock = comprobante.cae
+    ? `<div style="display:flex;justify-content:space-between;align-items:center">
+        <div><strong>CAE N°:</strong> ${comprobante.cae} &nbsp;&nbsp; <strong>Fecha de Vto. de CAE:</strong> ${fmtFecha(comprobante.cae_vencimiento)}</div>
+        <div style="font-weight:700">Comprobante Autorizado</div>
+       </div>
+       <div style="font-size:9px;color:#666;margin-top:4px">Esta Agencia no se responsabiliza por los datos ingresados en el detalle de la operación</div>`
+    : `<div style="color:#999;font-style:italic">CAE pendiente — conectar ARCA/AFIP para emisión electrónica oficial</div>`
+
+  // Generar una página por copia
+  const paginas = COPIAS.map(copia => `
+  <div class="pagina">
+    <!-- Título copia -->
+    <div class="copia-titulo">${copia}</div>
+
+    <!-- ENCABEZADO -->
+    <div class="enc">
+      <!-- Emisor izquierda -->
+      <div class="enc-emisor">
+        <div class="emisor-nombre">${empresa?.razon_social||'Mi Empresa'}</div>
+        <div class="emisor-dir">${empresa?.domicilio||''}</div>
+        ${empresa?.telefono?`<div class="emisor-sub">Tel.: ${empresa.telefono}</div>`:''}
+        ${empresa?.email?`<div class="emisor-sub">${empresa.email}</div>`:''}
+        <div class="emisor-sub">Condición frente al IVA: <strong>${condEmisorLabel}</strong></div>
+      </div>
+
+      <!-- Centro: letra -->
+      <div class="enc-letra">
+        <div class="letra-box">${letra}<div class="cod-label">COD. ${cod}</div></div>
+      </div>
+
+      <!-- Derecha: tipo + datos -->
+      <div class="enc-datos">
+        <div class="comp-tipo">${TIPOS_LABEL[comprobante.tipo]||'COMPROBANTE'}</div>
+        <div class="enc-row"><span>Punto de Venta: <strong>${String(comprobante.punto_venta||1).padStart(5,'0')}</strong></span><span>Comp. Nro: <strong>${String(comprobante.numero||0).padStart(8,'0')}</strong></span></div>
+        <div class="enc-row-single">Fecha de Emisión: <strong>${fmtFecha(comprobante.fecha)}</strong></div>
+        <div style="height:6px"></div>
+        <div class="enc-row-single">CUIT: <strong>${empresa?.cuit||'—'}</strong></div>
+        ${empresa?.inicio_actividades?`<div class="enc-row-single">Fecha de Inicio de Actividades: <strong>${fmtFecha(empresa.inicio_actividades)}</strong></div>`:''}
+      </div>
+    </div>
+
+    <!-- CLIENTE -->
+    <div class="cliente-sec">
+      <div class="cli-grid-top">
+        <div><span class="lbl">CUIT:</span> ${comprobante.clientes?.cuit_dni||'—'}</div>
+        <div style="grid-column:span 2"><span class="lbl">Apellido y Nombre / Razón Social:</span> ${comprobante.clientes?.nombre||'Consumidor Final'}</div>
+      </div>
+      <div class="cli-grid-top" style="border-top:1px solid #ccc">
+        <div><span class="lbl">Condición frente al IVA:</span> ${condIvaCliente}</div>
+        <div><span class="lbl">Domicilio:</span> ${comprobante.clientes?.domicilio||'—'}</div>
+        <div><span class="lbl">Condición de venta:</span> ${comprobante.condicion_pago||'Contado'}</div>
+      </div>
+      ${esNota&&compOriginalRef?`<div class="nota-ref">Comprobante que se corrige: <strong>${compOriginalRef}</strong></div>`:''}
+    </div>
+
+    <!-- TABLA -->
+    <table class="items">
+      <thead>${theadHTML}</thead>
+      <tbody>${itemsHTML}</tbody>
+    </table>
+
+    <!-- TOTALES -->
+    <div class="totales-wrap">
+      <div class="totales-inner">${totalesHTML}</div>
+    </div>
+
+    <!-- CAE -->
+    <div class="cae">${caeBlock}</div>
+
+    ${obsLimpia?`<div class="obs"><strong>Observaciones:</strong> ${obsLimpia}</div>`:''}
+  </div>`).join('<div class="salto"></div>')
 
   const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>${TIPOS_LABEL[comprobante.tipo]||'Comprobante'} ${letra} ${numero}</title>
+<title>${TIPOS_LABEL[comprobante.tipo]} ${letra} ${numero}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;background:#e8e8e8}
-  .page{width:680px;margin:16px auto;background:#fff;border:1.5px solid #555;padding:0}
-  .actions{background:#222;padding:9px 14px;display:flex;gap:8px;justify-content:flex-end}
+  body{font-family:Arial,sans-serif;font-size:10.5px;color:#1a1a1a;background:#e0e0e0}
+  .actions{background:#222;padding:9px 14px;display:flex;gap:8px;justify-content:flex-end;position:fixed;top:0;width:100%;z-index:99}
   .btn{border:none;border-radius:5px;padding:6px 16px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit}
   .btn-p{background:#185FA5;color:#fff}
   .btn-c{background:#555;color:#fff}
+  .contenido{padding-top:46px}
 
-  /* ── ENCABEZADO ── */
-  .enc{display:grid;grid-template-columns:1fr 120px 1fr;border-bottom:1.5px solid #555;min-height:110px}
-  .enc-left{padding:10px 14px;border-right:1.5px solid #555}
-  .enc-center{display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1.5px solid #555;gap:4px}
-  .enc-right{padding:10px 14px}
-  .letra-box{width:64px;height:64px;border:2px solid #333;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:700;line-height:1}
-  .tipo-label{font-size:13px;font-weight:700;letter-spacing:.04em;text-align:right}
-  .razon{font-size:13px;font-weight:700;margin-bottom:4px}
-  .sub{font-size:9.5px;color:#444;line-height:1.65}
-  .num-label{font-size:9px;color:#555;margin-top:6px;text-align:right}
-  .num-val{font-size:12px;font-weight:700;text-align:right}
-  .fecha-row{display:flex;align-items:center;gap:6px;justify-content:flex-end;margin-top:8px;font-size:9.5px}
-  .fecha-box{border:1px solid #555;width:30px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px}
-  .cond-emisor{text-align:center;font-size:9px;font-weight:700;letter-spacing:.05em;color:#333;border-top:1px solid #555;padding:4px 0;margin-top:4px;width:100%}
+  .pagina{width:720px;margin:16px auto;background:#fff;border:1px solid #aaa;padding:0}
+  .salto{height:20px}
 
-  /* ── SECCIÓN CLIENTE ── */
-  .cliente-sec{border-bottom:1px solid #555}
-  .cliente-row{padding:5px 14px;display:flex;align-items:baseline;gap:6px;border-bottom:.5px solid #ccc;font-size:10px}
-  .cliente-row label{font-weight:700;min-width:60px;flex-shrink:0}
-  .linea{flex:1;border-bottom:1px dotted #888;min-height:14px}
-  .iva-row{display:flex;gap:0;border-bottom:1px solid #555}
-  .iva-cell{padding:5px 14px;font-size:9.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-right:1px solid #555;flex:1}
-  .iva-cell:last-child{border-right:none}
-  .iva-opt{display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
-  .cond-venta{display:flex;align-items:center;gap:10px;padding:5px 14px;border-bottom:1px solid #555;font-size:9.5px;font-weight:700}
+  /* Copia */
+  .copia-titulo{text-align:center;font-size:14px;font-weight:700;letter-spacing:.1em;padding:6px 0;border-bottom:1.5px solid #333;background:#f5f5f5}
 
-  ${esNota ? `.nota-ref{padding:5px 14px;background:#FFF8E6;border-bottom:1px solid #e0c060;font-size:9.5px;color:#7a5800}` : ''}
+  /* Encabezado */
+  .enc{display:grid;grid-template-columns:1fr 100px 1fr;border-bottom:1.5px solid #333;min-height:100px}
+  .enc-emisor{padding:10px 14px;border-right:1.5px solid #333}
+  .enc-letra{display:flex;align-items:center;justify-content:center;border-right:1.5px solid #333}
+  .enc-datos{padding:10px 14px}
+  .emisor-nombre{font-size:13px;font-weight:700;margin-bottom:3px}
+  .emisor-dir{font-size:10px;color:#444;margin-bottom:2px}
+  .emisor-sub{font-size:10px;color:#444;margin-bottom:1px}
+  .letra-box{width:68px;height:68px;border:2px solid #333;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:38px;font-weight:700;line-height:1;position:relative}
+  .cod-label{font-size:8px;color:#555;margin-top:2px;font-weight:400}
+  .comp-tipo{font-size:16px;font-weight:700;margin-bottom:6px}
+  .enc-row{display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px}
+  .enc-row-single{font-size:10px;margin-bottom:2px}
 
-  /* ── TABLA ITEMS ── */
+  /* Cliente */
+  .cliente-sec{border-bottom:1.5px solid #333}
+  .cli-grid-top{display:grid;grid-template-columns:1fr 1fr 1fr;padding:6px 14px;gap:4px;font-size:10px}
+  .lbl{font-weight:700}
+  .nota-ref{padding:5px 14px;background:#FFF8E6;border-top:1px solid #e0c060;font-size:10px;color:#7a5800}
+
+  /* Tabla */
   table.items{width:100%;border-collapse:collapse;font-size:10px}
-  table.items th{background:#eee;border:1px solid #aaa;padding:5px 8px;font-weight:700;font-size:9.5px}
-  table.items td{padding:2px 8px;font-size:10px}
-  table.items th.c,table.items td.c{text-align:center}
-  table.items th.r,table.items td.r{text-align:right}
+  table.items thead tr{background:#e8e8e8}
+  table.items th{padding:5px 8px;border:1px solid #bbb;font-weight:700;font-size:9.5px;text-align:center}
+  table.items td{padding:4px 8px;border-bottom:.5px solid #e0e0e0;font-size:10px;min-height:18px}
+  table.items tbody tr:nth-child(even){background:#fafafa}
 
-  /* ── PIE ── */
-  .pie-wrap{border-top:1.5px solid #555;display:grid;grid-template-columns:1fr 220px}
-  .pie-obs{padding:10px 14px;font-size:9.5px;color:#555;border-right:1px solid #555}
-  .pie-obs b{display:block;color:#111;margin-bottom:3px;font-size:10px}
-  .totales-wrap{padding:0}
-  table.tots{width:100%;border-collapse:collapse;font-size:10px}
-  table.tots td{padding:5px 14px;border-bottom:.5px solid #eee}
-  table.tots td.r{text-align:right}
-  .tot-final-row td{border-top:2px solid #333;border-bottom:none;font-weight:700;font-size:14px;padding:8px 14px;background:#f5f5f5}
-  .tot-final-row td.r{text-align:right}
+  /* Totales */
+  .totales-wrap{display:flex;justify-content:flex-end;border-top:1.5px solid #333;padding:10px 14px}
+  .totales-inner{width:280px}
+  .tot-row{display:flex;justify-content:space-between;padding:3px 0;font-size:11px;border-bottom:.5px solid #eee}
+  .tot-final{font-weight:700;font-size:13px;border-top:1.5px solid #333;border-bottom:none;padding-top:6px;margin-top:4px}
 
-  /* ── CAE ── */
-  .cae{padding:7px 14px;border-top:1px solid #aaa;background:#f9f9f9;font-size:9px;color:#666;text-align:center}
-  .firma{padding:7px 14px;border-top:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;font-size:8.5px;color:#aaa}
+  /* CAE */
+  .cae{padding:8px 14px;border-top:1px solid #ccc;background:#f9f9f9;font-size:10px}
+  .obs{padding:6px 14px;border-top:1px solid #eee;font-size:10px;color:#555}
 
   @media print{
     @page{margin:6mm;size:A4}
     body{background:#fff}
     .actions{display:none!important}
-    .page{width:100%;margin:0;border:none}
+    .contenido{padding-top:0}
+    .pagina{width:100%;margin:0;border:none;page-break-after:always}
+    .pagina:last-child{page-break-after:auto}
+    .salto{display:none}
   }
 </style>
 </head>
 <body>
-<div class="page">
-  <div class="actions">
-    <button class="btn btn-p" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
-    <button class="btn btn-c" onclick="window.close()">✕ Cerrar</button>
-  </div>
-
-  <!-- ENCABEZADO -->
-  <div class="enc">
-    <div class="enc-left">
-      <div class="razon">${empresa?.razon_social||'Mi Empresa'}</div>
-      <div class="sub">
-        ${empresa?.domicilio?`<div>${empresa.domicilio}</div>`:''}
-        ${empresa?.telefono?`<div>Tel.: ${empresa.telefono}</div>`:''}
-        ${empresa?.email?`<div>${empresa.email}</div>`:''}
-        ${empresa?.inicio_actividades?`<div>Inicio de Actividades: ${fmtFecha(empresa.inicio_actividades)}</div>`:''}
-      </div>
-    </div>
-
-    <div class="enc-center">
-      <div class="tipo-label" style="position:absolute;right:14px;top:14px">${TIPOS_LABEL[comprobante.tipo]||'COMPROBANTE'}</div>
-      <div class="letra-box">${letra}</div>
-      <div style="font-size:9px;color:#666">Cód. ${cod}</div>
-      <div class="cond-emisor">${condEmisorLabel}</div>
-    </div>
-
-    <div class="enc-right" style="position:relative">
-      <div class="tipo-label">${TIPOS_LABEL[comprobante.tipo]||'COMPROBANTE'}</div>
-      <div class="num-label">N°</div>
-      <div class="num-val">${numero}</div>
-      <div class="fecha-row">
-        <span>FECHA</span>
-        <div class="fecha-box">${dia}</div>
-        <div class="fecha-box">${mes}</div>
-        <div class="fecha-box">${anio}</div>
-      </div>
-      <div class="sub" style="margin-top:6px">
-        C.U.I.T. N°: <strong>${empresa?.cuit||'—'}</strong>
-      </div>
-    </div>
-  </div>
-
-  <!-- CLIENTE -->
-  <div class="cliente-sec">
-    <div class="cliente-row">
-      <label>Señores:</label>
-      <span style="flex:1;border-bottom:1px dotted #888;padding-bottom:1px;min-height:14px">
-        ${comprobante.clientes?.nombre||'Consumidor Final'}
-      </span>
-      ${comprobante.clientes?.cuit_dni?`<label style="margin-left:16px">C.U.I.T.:</label>
-      <span style="border-bottom:1px dotted #888;padding:0 8px;min-width:120px">${comprobante.clientes.cuit_dni}</span>`:''}
-    </div>
-    <div class="cliente-row">
-      <label>Dirección:</label>
-      <span style="flex:1;border-bottom:1px dotted #888;padding-bottom:1px;min-height:14px">
-        ${comprobante.clientes?.domicilio||''}
-      </span>
-    </div>
-
-    <!-- IVA del cliente -->
-    <div class="iva-row">
-      <div class="iva-cell">
-        <strong>IVA</strong>
-        <span class="iva-opt">${chk('responsable inscript')} Resp. Inscripto</span>
-        <span class="iva-opt">${chk('monotribut')} Resp. Monotributo</span>
-        <span class="iva-opt">${chk('exento')} Exento</span>
-        <span class="iva-opt">${chk('no responsable')} No Responsable</span>
-        <span class="iva-opt">${esCF||chk('consumidor final')==='&#9745;'?'&#9745;':'&#9744;'} Cons. Final</span>
-      </div>
-    </div>
-
-    <!-- Condición de venta -->
-    <div class="cond-venta">
-      Condiciones de Venta: ${comprobante.condicion_pago||'Contado'}
-    </div>
-
-    ${esNota&&compOriginalRef?`<div class="nota-ref">&#9888; Comprobante que se corrige: <strong>${compOriginalRef}</strong></div>`:''}
-  </div>
-
-  <!-- TABLA DE ITEMS -->
-  <table class="items">
-    <thead>
-      <tr>
-        <th class="c" style="width:10%">CANT.</th>
-        <th style="width:${sinIva?'58%':'50%'}">DETALLE</th>
-        ${sinIva?'':`<th class="c" style="width:10%">IVA %</th>`}
-        <th class="r" style="width:${sinIva?'17%':'15%'}">P.UNITARIO</th>
-        <th class="r" style="width:${sinIva?'15%':'15%'}">IMPORTE</th>
-      </tr>
-    </thead>
-    <tbody>${itemsHTML}</tbody>
-  </table>
-
-  <!-- PIE -->
-  <div class="pie-wrap">
-    <div class="pie-obs">
-      ${obsLimpia?`<b>Observaciones:</b>${obsLimpia}`:'&nbsp;'}
-    </div>
-    <div class="totales-wrap">
-      <table class="tots">
-        ${totalesHTML}
-        <tr class="tot-final-row">
-          <td>TOTAL $</td>
-          <td class="r">$ ${fmt(comprobante.total)}</td>
-        </tr>
-      </table>
-    </div>
-  </div>
-
-  <!-- CAE -->
-  <div class="cae">${caeHTML}</div>
-
-  <div class="firma">
-    <span>ORIGINAL BLANCO &mdash; DUPLICADO COLOR</span>
-    <span>Comprobante generado por StockFact AR &mdash; ${new Date().toLocaleDateString('es-AR')}</span>
-  </div>
+<div class="actions">
+  <button class="btn btn-p" onclick="window.print()">🖨 Imprimir / Guardar PDF (3 copias)</button>
+  <button class="btn btn-c" onclick="window.close()">✕ Cerrar</button>
+</div>
+<div class="contenido">
+  ${paginas}
 </div>
 </body>
 </html>`
 
-  const w = window.open('','_blank','width=780,height:980')
+  const w = window.open('','_blank','width=800,height=980')
   w.document.write(html)
   w.document.close()
 }
