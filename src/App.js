@@ -99,13 +99,25 @@ export default function App() {
     <div style={{ display:'flex', height:'100vh', overflow:'hidden' }}>
       {/* Sidebar */}
       <aside style={{ width:200, background:'var(--bg)', borderRight:'0.5px solid var(--border)', display:'flex', flexDirection:'column', flexShrink:0 }}>
-        <div style={{ padding:'16px', borderBottom:'0.5px solid var(--border)' }}>
-          <div style={{ fontWeight:600, fontSize:15, color:'var(--text)' }}>StockFact AR</div>
-          <div style={{ fontSize:11, color:'var(--text3)', marginTop:2 }}>
-            {empresa?.razon_social || 'Sin configurar'}
+        <div style={{ padding:'14px 16px', borderBottom:'0.5px solid var(--border)' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
+            {empresa?.logo_url
+              ? <img src={empresa.logo_url} alt="Logo" style={{ width:36, height:36, objectFit:'contain', borderRadius:6, border:'0.5px solid var(--border)', background:'var(--bg2)', padding:2 }} />
+              : <div style={{ width:36, height:36, borderRadius:6, background:'var(--blue)', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:700, fontSize:14, flexShrink:0 }}>
+                  {(empresa?.razon_social||'S').charAt(0).toUpperCase()}
+                </div>
+            }
+            <div>
+              <div style={{ fontWeight:600, fontSize:13, color:'var(--text)', lineHeight:1.3 }}>
+                {empresa?.razon_social || 'StockFact AR'}
+              </div>
+              <div style={{ fontSize:10, color:'var(--text3)' }}>
+                {empresa?.condicion_iva || 'Sin configurar'}
+              </div>
+            </div>
           </div>
           {esAdmin && (
-            <div style={{ marginTop:4, fontSize:10, background:'var(--blue-light)', color:'var(--blue)', borderRadius:4, padding:'2px 6px', display:'inline-block', fontWeight:600 }}>
+            <div style={{ fontSize:10, background:'var(--blue-light)', color:'var(--blue)', borderRadius:4, padding:'2px 6px', display:'inline-block', fontWeight:600 }}>
               ADMIN
             </div>
           )}

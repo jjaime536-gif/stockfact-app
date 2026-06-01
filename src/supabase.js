@@ -136,3 +136,25 @@ export const getReporteVentas = async (desde, hasta) => {
     .order('fecha', { ascending: false })
   return { data: data || [], error }
 }
+
+// ── Logo ──────────────────────────────────────────────────
+export const subirLogo = async (empresaId, file) => {
+  const ext = file.name.split('.').pop()
+  const path = `${empresaId}/logo.${ext}`
+  
+  // Subir archivo
+  const { error: uploadError } = await supabase.storage
+    .from('logos')
+    .upload(path, file, { upsert: true })
+  
+  if (uploadError) return { url: null, error: uploadError }
+  
+  // Obtener URL publica
+  const { data } = supabase.storage.from('logos').getPublicUrl(path)
+  const url = data.publicUrl + '?t=' + Date.now()
+  
+  // Guardar URL en la empresa
+  await supabase.from('empresas').update({ logo_url: url.split('?')[0] }).eq('id', empresaId)
+  
+  return { url, error: null }
+}
