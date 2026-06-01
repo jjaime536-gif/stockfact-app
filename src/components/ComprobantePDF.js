@@ -93,6 +93,9 @@ export function imprimirComprobante(comprobante, empresa) {
     <div class="enc">
       <!-- Emisor izquierda -->
       <div class="enc-emisor">
+        ${empresa?.logo_url
+          ? `<img src="${empresa.logo_url}" alt="Logo" style="max-height:48px;max-width:160px;object-fit:contain;margin-bottom:8px;display:block">`
+          : ''}
         <div class="emisor-nombre">${empresa?.razon_social||'Mi Empresa'}</div>
         <div class="emisor-dir">${empresa?.domicilio||''}</div>
         ${empresa?.telefono?`<div class="emisor-sub">Tel.: ${empresa.telefono}</div>`:''}
