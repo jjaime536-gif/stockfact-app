@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef } from 'react'
+import * as XLSX from 'xlsx'
 import { Card, Btn, Badge, Table, Modal, Input, Select, formatPeso } from '../components/UI'
 import { upsertProducto, deleteProducto, ajusteStock, getEmpresa } from '../supabase'
 import { getAlicuotas, getAlicuotaDefault } from '../utils/iva'
@@ -18,6 +19,69 @@ export default function Stock({ productos, recargar, empresa }) {
   const [ajuste, setAjuste] = useState({ tipo: 'ajuste_positivo', cantidad: '', motivo: '' })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
+
+  const importRef = useRef()
+
+  const descargarPlantilla = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['Codigo', 'Nombre', 'Categoria', 'Precio venta', 'Costo', 'Stock actual', 'Stock minimo', 'Unidad'],
+      ['ART-001', 'Ejemplo producto', 'General', 1000, 500, 10, 2, 'unidad'],
+    ])
+    // Ancho de columnas
+    ws['!cols'] = [
+      {wch:12},{wch:30},{wch:15},{wch:14},{wch:12},{wch:14},{wch:14},{wch:10}
+    ]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Productos')
+    XLSX.writeFile(wb, 'plantilla_stock.xlsx')
+  }
+
+  const importarExcel = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: 'array' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
+
+        if (rows.length === 0) { alert('El archivo está vacío'); return }
+
+        const { data: emp } = await getEmpresa()
+        if (!emp?.id) { alert('Configurá la empresa primero'); return }
+
+        let ok = 0, errores = 0
+        for (const row of rows) {
+          const prod = {
+            empresa_id: emp.id,
+            codigo:        String(row['Codigo'] || row['Código'] || '').trim(),
+            nombre:        String(row['Nombre'] || '').trim(),
+            categoria:     String(row['Categoria'] || row['Categoría'] || 'General').trim(),
+            precio_venta:  parseFloat(row['Precio venta'] || row['Precio Venta'] || 0) || 0,
+            costo:         parseFloat(row['Costo'] || 0) || 0,
+            stock_actual:  parseFloat(row['Stock actual'] || row['Stock Actual'] || 0) || 0,
+            stock_minimo:  parseFloat(row['Stock minimo'] || row['Stock Mínimo'] || 0) || 0,
+            unidad:        String(row['Unidad'] || 'unidad').trim(),
+            alicuota_iva:  aDefault,
+            activo:        true,
+          }
+          if (!prod.nombre) { errores++; continue }
+          const { error } = await upsertProducto(prod)
+          if (error) errores++
+          else ok++
+        }
+
+        alert(`Importación completada:\n✓ ${ok} productos importados\n${errores > 0 ? `✗ ${errores} filas con error` : ''}`)
+        recargar()
+      } catch (err) {
+        alert('Error al leer el archivo: ' + err.message)
+      }
+      // Resetear input para permitir reimportar el mismo archivo
+      e.target.value = ''
+    }
+    reader.readAsArrayBuffer(file)
+  }
 
   const filtrados = productos.filter(p =>
     (!busqueda || p.nombre.toLowerCase().includes(busqueda.toLowerCase()) || p.codigo.toLowerCase().includes(busqueda.toLowerCase())) &&
@@ -67,6 +131,17 @@ export default function Stock({ productos, recargar, empresa }) {
           <option value="">Todas las categorías</option>
           {CATEGORIAS.map(c => <option key={c}>{c}</option>)}
         </select>
+        <Btn onClick={descargarPlantilla}>⤓ Plantilla Excel</Btn>
+        <label style={{
+          padding:'7px 14px', borderRadius:'var(--radius)',
+          border:'0.5px solid var(--border2)', background:'var(--bg)',
+          color:'var(--text)', cursor:'pointer', fontSize:13,
+          fontWeight:500, display:'inline-flex', alignItems:'center', gap:6,
+          fontFamily:'inherit'
+        }}>
+          ⤒ Importar Excel
+          <input ref={importRef} type="file" accept=".xlsx,.xls" onChange={importarExcel} style={{ display:'none' }} />
+        </label>
         <Btn primary onClick={abrirNuevo}>+ Nuevo producto</Btn>
       </div>
 
